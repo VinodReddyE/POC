@@ -1,47 +1,35 @@
-# Noticeboard CRUD application
+# Platform CI (Continuous Integration) pipeline 
 
-![Master Branch](https://github.com/wkrzywiec/NoticeBoard/workflows/Master%20Branch/badge.svg) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=wkrzywiec_NoticeBoard&metric=coverage)](https://sonarcloud.io/dashboard?id=wkrzywiec_NoticeBoard) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=wkrzywiec_NoticeBoard&metric=alert_status)](https://sonarcloud.io/dashboard?id=wkrzywiec_NoticeBoard)
+We use 
+[github actions](https://help.github.com/en/actions) for our CI pipeline.
 
-This is a simple RESTful CRUD (Create Read Update Delete) application for managing Boards, Notices and Authors saved in PostgreSQL database. It provides basic REST endpoints like fetching all objects of given type, finding them by their id, creating them and so on.
+- github action
+- gcp setup with github actions
+- google secret manager
+- pom file setup and integration tests
+- sonarcloud 
 
-![data-model](https://github.com/wkrzywiec/NoticeBoard/blob/master/pics/data-model.png)
+# github action
 
-## Usage
+[How to setup github actions](GITHUBACTIONS.md)
 
-An application expose 5 REST endpoints for each entity. For example *Notice* (and any other) they are:
+# gcp setup with github actions
 
-* **GET** `{baseURL}/notices/` - lists all *Notices* (as Json array),
-* **GET** `{baseURL}/notices/{id}` - gets single *Notice* (as Json) by its `{id}`,
-* **POST** `{baseURL}/notices/` - creates a new *Notice* which is passed in the BODY of the request,
-* **PUT** `{baseURL}/notices/{id}` - updates an existing *Notice* (with an `{id}`) with `Notice` passed in the body of the request,
-* **DELETE** `{baseURL}/notices/{id}`- deletes an existing *Notice* by its `{id}`.
+[How to integrate google cloud with github actions](https://github.com/GoogleCloudPlatform/github-actions/tree/master/setup-gcloud)
+  
+# google secret manager
 
-If you run this application locally the `{baseUrl}` would be `http://localhost:8080`. 
+[How to setup secrets in google cloud platform](GCPSECRETMANAGER.md)
 
-All available endpoints are listed on *Swagger UI* page which can be entered, when application is running, under *http://localhost:8080/swagger-ui.html* URL.
+# maven pom file setup and integration tests
 
-![endpoints](https://github.com/wkrzywiec/NoticeBoard/blob/master/pics/notice-endpoints.png)
+[How to setup integration test in CI pipeline](INTEGRATIONTEST.md)
+ 
+# sonarCloud
 
-## Installation
+[How to setup sonarcloud in CI pipeline](SONARCLOUD.md)
 
-#### Run
 
-Before running the application make sure that you are running PostgreSQL database on your local machine.
 
-In order to run it use following command:
 
-```shell script
-mvn clean spring-boot:run
-```
 
-#### Integration tests
-
-In this project there are located several integration tests for REST endpoints during which H2 database is used. To run those tests activate Mavan `-P integration-test` profile:
-
-```shell script
-mvn clean verify -P integration-test
-```
-
-## License 
-
-The MIT License - 2020 - Wojciech Krzywiec

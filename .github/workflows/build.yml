@@ -1,0 +1,117 @@
+# This workflow will build a docker container, publish it to Google Container Registry, and deploy it to GKE.
+#
+# GKE image build take from https://github.com/GoogleCloudPlatform/github-actions
+#
+# For more information, see: https://github.com/storebrand-digital/platform-ci
+
+name: Build and Deploy to GCR
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+# Environment variables available to all jobs and steps in this workflow
+env:
+  GKE_PROJECT: dbd-shared-all
+  GKE_ZONE: europe-west4
+  CLOUDSDK_CORE_DISABLE_PROMPTS: 1
+
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish, and Deploy
+    runs-on: ubuntu-latest
+    steps:
+    - name: Create release IMAGE name
+      run: |
+        export IMAGE_NAME_FROM_REPO="$(echo "$GITHUB_REPOSITORY" | cut -d '/' -f2)"
+        echo "::set-env name=IMAGE::$IMAGE_NAME_FROM_REPO"
+
+    - name: Print environment
+      run: env
+
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Set up JDK 1.11
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.11
+
+    - name: Setup GoogleCloud
+      uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+      with:
+        version: '285.0.0'
+        project_id: dbd-shared-all
+        service_account_email: shared-gke-docker-build-sa@dbd-shared-all.iam.gserviceaccount.com
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - id: secrets
+      name: Get secrets from google secret manager
+      uses: GoogleCloudPlatform/github-actions/get-secretmanager-secrets@master
+      with:
+        secrets: |-
+          token:dbd-shared-all/GITHUB_PACKAGES_DEPLOY_KEY
+
+    - name: Add bot token in order to be able to storebrand github packages repo
+      env:
+        GITHUB_USERNAME: x-access-token
+        GITHUB_TOKEN: ${{steps.secrets.outputs.token}}
+      run: |
+        echo "Workaround as we cannot use GH_TOKEN in this setting - it does not work"
+        echo "<settings><servers><server><id>github</id><username>${GITHUB_USERNAME}</username><password>${GITHUB_TOKEN}</password></server></servers></settings>" > ~/.m2/settings.xml
+
+    - uses: actions/cache@v1
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Integration test
+      run: mvn -B clean verify -Pintegration-test
+
+#    TODO SonarCloud step (this is WIP - awaiting a paid subscription)
+#   - name: SonarCloud Scan
+#     run: mvn -B clean verify -Psonar -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+#     env:
+#        GITHUB_USERNAME: x-access-token
+#        GITHUB_TOKEN: ${{steps.secrets.outputs.token}}
+
+    - name: Build with Maven
+      run: mvn -B package -Dmaven.test.skip=false --define maven.javadoc.skip=true -define source.skip=true --define skipITs=true --file pom.xml
+
+
+    # Configure docker to use the gcloud command-line tool as a credential helper
+    - name: Configure docker to use gcr
+      run: |
+        gcloud config set project $GKE_PROJECT
+        gcloud config set compute/zone $GKE_ZONE
+        gcloud config set compute/region $GKE_ZONE
+        gcloud auth configure-docker eu.gcr.io
+        # gcloud container images list-tags eu.gcr.io/$GKE_PROJECT/$IMAGE
+
+      # Build the Docker image
+    - name: Build docker image
+      run: |
+        docker build -t eu.gcr.io/$GKE_PROJECT/$IMAGE:$GITHUB_SHA \
+          --build-arg GITHUB_SHA="$GITHUB_SHA" \
+          --build-arg GITHUB_REF="$GITHUB_REF" .
+    - uses: anchore/scan-action@master
+      with:
+        image-reference:  eu.gcr.io/${{ env.GKE_PROJECT }}/${{ env.IMAGE }}:${{ github.sha }}
+        dockerfile-path: "./Dockerfile"
+        fail-build: true
+    - name: anchore inline scan JSON results
+      run: for j in `ls ./anchore-reports/*.json`; do echo "---- ${j} ----"; cat ${j}; echo; done
+
+    # Push the Docker image to Google Container Registry
+    - name: Publish image to gcr
+      run: |
+        docker tag eu.gcr.io/$GKE_PROJECT/$IMAGE:$GITHUB_SHA eu.gcr.io/$GKE_PROJECT/$IMAGE:latest
+        docker push eu.gcr.io/$GKE_PROJECT/$IMAGE:$GITHUB_SHA
+        docker push eu.gcr.io/$GKE_PROJECT/$IMAGE:latest
